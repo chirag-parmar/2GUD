@@ -33,6 +33,16 @@ func storeFile(node_id string, hash string, content string) error {
 	return nil
 }
 
+func readFile(node_id string, hash string) (err error, content string) {
+	dat, err := os.ReadFile(node_id + "/" + hash)
+	if err != nil {
+		return errors.New("Error reading th file"), ""
+	}
+	content = string(dat)
+
+	return nil, content
+}
+
 // send an RPC request to the coordinator, wait for the response.
 // usually returns true.
 // returns false if something goes wrong.

@@ -43,6 +43,16 @@ type CommitFilesReply struct {
 	IndexMap map[string]int
 }
 
+type DownloadFileArgs struct {
+	Merkle string
+	Index int
+}
+
+type DownloadFileReply struct {
+	Proof []string
+	Content string
+}
+
 type ReplicateArgs struct {
 	requesterID string
 	files map[string]string

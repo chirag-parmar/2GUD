@@ -64,18 +64,22 @@ func (n *node) addLeaf(hash string) {
 type MerkleTree struct {
 	root *node
 	numLeaves int
-	indexMap map[string]int
+	indexToHash map[int]string
+	hashToIndex map[string]int
 }
 
 func (t *MerkleTree) Init(hash string) {
 	t.root = &node{nil, nil, 1, hash}
 	t.numLeaves = 1
-	t.indexMap = make(map[string]int)
-	t.indexMap[hash] = 0
+	t.indexToHash = make(map[int]string)
+	t.indexToHash[0] = hash
+	t.hashToIndex = make(map[string]int)
+	t.hashToIndex[hash] = 0
 }
 
 func (t *MerkleTree) AddLeaf(hash string) error {
-	t.indexMap[hash] = t.numLeaves
+	t.indexToHash[t.numLeaves] = hash
+	t.hashToIndex[hash] = t.numLeaves
 	t.numLeaves += 1
 	t.root.addLeaf(hash)
 
@@ -91,8 +95,41 @@ func (t *MerkleTree) Depth() int {
 	return int(math.Ceil(math.Log2(float64(t.root.weight))))
 }
 
-func (t *MerkleTree) GetProof(hash string) []string {
-	path := fmt.Sprintf("%b", t.indexMap[hash])
+func (t *MerkleTree) GetProofByIndex(index int) []string {
+	path := fmt.Sprintf("%b", index)
+	
+	// FIXME: There is probably a way to avoid this
+	if len(path) < t.Depth() {
+		path = strings.Repeat("0", t.Depth() - len(path)) + path
+	}
+
+	var proof []string
+	curNode := t.root
+	for i := 0; i < len(path); i++ {
+		if curNode.isLeaf() {
+			break
+		}
+
+		if (i < len(path) - 1) && curNode.bothChildrenAreLeaves() {
+			continue
+		}
+
+		if path[i] == '0' {
+			proof = append(proof, "0") //instruction for concatenation during verification
+			proof = append(proof, curNode.right.hash)
+			curNode = curNode.left
+		} else {
+			proof = append(proof, "1") //instruction for concatenation during verification
+			proof = append(proof, curNode.left.hash)
+			curNode = curNode.right
+		}
+	}
+
+	return proof
+}
+
+func (t *MerkleTree) GetProofByHash(hash string) []string {
+	path := fmt.Sprintf("%b", t.hashToIndex[hash])
 	
 	// FIXME: There is probably a way to avoid this
 	if len(path) < t.Depth() {
@@ -143,7 +180,7 @@ func VerifyProof(content string, proof []string, rootHash string) bool {
 }
 
 
-// Quick and Dirty testing
+// // Quick and Dirty testing
 // func main() {
 // 	t := MerkleTree{}
 // 	t.Init(ComputeHash("A"))
@@ -195,7 +232,12 @@ func VerifyProof(content string, proof []string, rootHash string) bool {
 // 	// 	fmt.Println("Fail5")
 // 	// }
 
-// 	if !VerifyProof("C", t.GetProof(ComputeHash("C")), t.root.hash) {
+// 	if !VerifyProof("C", t.GetProofByHash(ComputeHash("C")), t.root.hash) {
+// 		fmt.Println("Proof fail!")
+// 		return
+// 	}
+
+// 	if !VerifyProof("C", t.GetProofByIndex(2), t.root.hash) {
 // 		fmt.Println("Proof fail!")
 // 		return
 // 	}

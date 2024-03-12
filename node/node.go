@@ -47,6 +47,7 @@ func (n *Node) init(address string, isPrimary bool, fileBudget int) {
 	n.fileStatusTable = make(map[string]int)
 	n.peerTable = make(map[string]*Peer)
 	n.discoveredAddresses = make(map[string]struct{})
+	n.trees = make(map[string]*MerkleTree)
 
 	// set passed arguments
 	n.address = address
@@ -157,8 +158,9 @@ func (n *Node) CommitFiles(args *CommitFilesArgs, reply *CommitFilesReply) error
 		}
 	}
 
+	n.trees[t.root.hash] = &t
 	reply.Merkle = t.root.hash
-	reply.IndexMap = t.indexMap
+	reply.IndexMap = t.hashToIndex
 
 	// reclaim file budget
 	if n.fileBookings[args.RequesterID] > 0 {
@@ -167,6 +169,29 @@ func (n *Node) CommitFiles(args *CommitFilesArgs, reply *CommitFilesReply) error
 
 	// remove the booking entry made
 	delete(n.fileBookings, args.RequesterID)
+
+	return nil
+}
+
+func (n *Node) DownloadFile(args *DownloadFileArgs, reply *DownloadFileReply) error {
+	if _, ok := n.trees[args.Merkle]; !ok {
+		return errors.New("Merkle hash provided doesn't exist on this node")
+	}
+
+	err, content := readFile(n.id, n.trees[args.Merkle].indexToHash[args.Index])
+	if err != nil {
+		return err
+	}
+
+	// FIXME: skipping below check to make the designed system more meaningful for demo
+	// ideally it is assumed that a corrupted file will also result in a corrupted merkle
+	// tree. ex. a databse hack
+	// if ComputeHash(content) != n.trees[args.Merkle].indexToHash[args.Index] {
+	// 	return errors.New("File corrupted on server!")
+	// }
+
+	reply.Proof = n.trees[args.Merkle].GetProofByIndex(args.Index)
+	reply.Content = content
 
 	return nil
 }
@@ -303,7 +328,7 @@ func (n *Node) discoverNewPeers(limit int) {
 }
 
 func main() {
-	isPrimary := flag.Bool("primary", false, "is this node a primary node")
+	isPrimary := flag.Bool("primary", true, "is this node a primary node")
 	fileBudget := flag.Int("budget", 1000, "how many 1MB files can this node manage")
 
 	gracefulShutDown := make(chan os.Signal, 1)
