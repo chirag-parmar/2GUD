@@ -24,4 +24,6 @@ We can use the usual merkle trees, but the problem is that they need a lot of ha
 
 
 1. control over indexes should be with client and not the server
-2. AppendLeaf was designed so that new files can be added to the same merkle root. Good for streamed, pause and resume uploading etc.
+2. AddLeaf was designed so that new files can be added to the same merkle root. Good for streamed, pause and resume uploading etc.
+3. Lots of garbage cleaning is required when considering edge cases of node failure
+4. How are we going to handle address change due to role switch (node failure)

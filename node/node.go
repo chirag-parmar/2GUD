@@ -39,6 +39,7 @@ type Node struct {
 	fileStatusTable map[string]int
 
 	trees map[string]*MerkleTree
+	treesStatus map[string]int
 }
 
 func (n *Node) init(address string, isPrimary bool, fileBudget int) {
@@ -48,6 +49,7 @@ func (n *Node) init(address string, isPrimary bool, fileBudget int) {
 	n.peerTable = make(map[string]*Peer)
 	n.discoveredAddresses = make(map[string]struct{})
 	n.trees = make(map[string]*MerkleTree)
+	n.treesStatus = make(map[string]int)
 
 	// set passed arguments
 	n.address = address
@@ -159,6 +161,7 @@ func (n *Node) CommitFiles(args *CommitFilesArgs, reply *CommitFilesReply) error
 	}
 
 	n.trees[t.root.hash] = &t
+	n.treesStatus[t.root.hash] = 0
 	reply.Merkle = t.root.hash
 	reply.IndexMap = t.hashToIndex
 
@@ -196,52 +199,60 @@ func (n *Node) DownloadFile(args *DownloadFileArgs, reply *DownloadFileReply) er
 	return nil
 }
 
-// func (n *Node) Replicate(args *ReplicateArgs, reply *ReplicateReply) (e error) {
-// 	if args.requesterID != n.marriedTo {
-// 		reply.success = false
-// 		reply.message = "Not your replica"
-// 		reply.numReplicated = 0
-// 		reply.replicated = nil
+func (n *Node) ReplicateMerkle(args *ReplicateMerkleArgs, reply *ReplicateMerkleReply) error {
+	// TODO:  this check should technically go in on every method
+	// thereby selectively opening up RPC API based on roles
+	if args.RequesterID != n.marriedTo {
+		return errors.New("Not my partner!")
+	}
 
-// 		return nil
-// 	}
+	orderedHashes := make([]string, len(args.Hashes))
+	for _, hash := range args.Hashes {
+		// TODO: Analyze if this part is redundant or not. Should we really do another hash check?
+		// if hash != ComputeHash(content) {
+		// 	reply.success = false
+		// 	reply.message = "computed hash does not match with provided hash"
 
-// 	reply.numReplicated = 0
-// 	for hash, content := range args.files {
-// 		if hash != ComputeHash(content) {
-// 			reply.success = false
-// 			reply.message = "computed hash does not match with provided hash"
+		// 	return nil
+		// }
 
-// 			return nil
-// 		}
-// 		storeFile(n.id, hash, content)
+		// add to temp table
+		n.fileStatusTable[hash] = 1
+		orderedHashes[args.IndexMap[hash]] = hash 
+		n.fileBudget--
+	}
 
-// 		// add to temp table
-// 		n.fileStatusTable[hash] = 2
+	t := MerkleTree{}
+	for i, mh := range orderedHashes {
+		if i == 0 {
+			t.Init(mh)
+		} else {
+			t.AddLeaf(mh)
+		}
+	}
 
-// 		reply.replicated = append(reply.replicated, hash)
-// 		reply.numReplicated++
-// 		n.replicaBudget--
-// 	}
+	if t.root.hash != args.Merkle {
+		return errors.New("The replication does not match the original!")
+	}
 
-// 	reply.success = true
-// 	return nil
-// }
+	n.trees[t.root.hash] = &t
+	n.treesStatus[t.root.hash] = 0
+	reply.Success = true
 
-// func (n *Node) ProposeReplication(args *ProposeReplicationArgs, reply *ProposeReplicationReply) (e error) {
-// 	if n.replicaFor != "" {
-// 		reply.replicaFor = n.replicaFor
-// 		reply.granted = false
+	return nil
+}
 
-// 		return nil
-// 	}
+func (n *Node) Propose(args *ProposeArgs, reply *ProposeReply) error {
+	if n.maritalStatus {
+		return errors.New("Already married!")
+	}
 
-// 	n.replicaFor = args.proposer
-// 	reply.replicaFor = n.replicaFor
-// 	reply.granted = true
+	n.marriedTo = args.Proposer
+	n.maritalStatus = true
+	reply.Granted = true
 
-// 	return nil
-// }
+	return nil
+}
 
 func (n *Node) sendFirstHeartBeat(address string) error {
 	args := HeartBeatArgs{
@@ -328,8 +339,9 @@ func (n *Node) discoverNewPeers(limit int) {
 }
 
 func main() {
-	isPrimary := flag.Bool("primary", true, "is this node a primary node")
+	isPrimary := flag.Bool("primary", false, "is this node a primary node")
 	fileBudget := flag.Int("budget", 1000, "how many 1MB files can this node manage")
+	flag.Parse()
 
 	gracefulShutDown := make(chan os.Signal, 1)
 	signal.Notify(gracefulShutDown, syscall.SIGINT, syscall.SIGTERM)
@@ -338,7 +350,7 @@ func main() {
 	n := new(Node)
 	
 	// initialize
-	n.init("127.0.0.1", *isPrimary, *fileBudget)
+	n.init(GetLocalIP(), *isPrimary, *fileBudget)
 	
 	rpc.Register(n)
 	rpc.HandleHTTP()

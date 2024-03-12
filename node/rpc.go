@@ -53,23 +53,21 @@ type DownloadFileReply struct {
 	Content string
 }
 
-type ReplicateArgs struct {
-	requesterID string
-	files map[string]string
+type ReplicateMerkleArgs struct {
+	RequesterID string
+	Hashes []string
+	IndexMap map[string]int
+	Merkle string
 }
 
-type ReplicateReply struct {
-	success bool
-	numReplicated int
-	message string
-	replicated []string
+type ReplicateMerkleReply struct {
+	Success bool
 }
 
-type ProposeReplicationArgs struct {
-	proposer string
+type ProposeArgs struct {
+	Proposer string
 }
 
-type ProposeReplicationReply struct {
-	replicaFor string
-	granted bool
+type ProposeReply struct {
+	Granted bool
 }
