@@ -6,7 +6,8 @@ import (
 	"net"
 	"net/rpc"
 	"math/rand"
-//    "errors"
+	"github.com/schollz/peerdiscovery"
+	// "time"
 )
 
 type Node struct {
@@ -36,10 +37,6 @@ func (n *Node) init() {
 	id_bytes := make([]byte, 32)
     rand.Read(id_bytes)
 	n.id = fmt.Sprintf("%x", id_bytes)
-}
-
-func (n *Node) advertise() {
-	
 }
 
 func (n *Node) ReportHeartBeat(args *HeartBeatArgs, reply *HeartBeatReply) (e error) {
@@ -202,6 +199,11 @@ func (n *Node) start() {
 
 	fmt.Println("RPC server listening on", listener.Addr())
 
+	discoveries, _ := peerdiscovery.Discover(peerdiscovery.Settings{Limit: 5})
+	for _, d := range discoveries {
+		fmt.Printf("discovered '%s'\n", d.Address)
+	}
+
 	// Accept incoming connections
 	for {
 		conn, err := listener.Accept()
@@ -213,6 +215,7 @@ func (n *Node) start() {
 		// Handle the connection in a separate goroutine using rpc.ServeConn
 		go rpc.ServeConn(conn)
 	}
+	
 }
 
 func main() {
