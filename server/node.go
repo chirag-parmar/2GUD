@@ -44,7 +44,7 @@ func (n *Node) ReportHeartBeat(args *HeartBeatArgs, reply *HeartBeatReply) (e er
 	return nil
 }
 
-func (n *Node) UploadRequest(args *UploadRequestArgs, reply *UploadFileReply) (e error) {
+func (n *Node) UploadRequest(args *UploadRequestArgs, reply *UploadRequestReply) (e error) {
 	// check if storage is available
 	if n.fileBudget < args.requiredBudget{
 		reply.granted = false
@@ -166,19 +166,22 @@ func (n *Node) Replicate(args *ReplicateArgs, reply *ReplicateReply) (e error) {
 func (n *Node) ProposeReplication(args *ProposeReplicationArgs, reply *ProposeReplicationReply) (e error) {
 	if n.replicaFor != "" {
 		reply.replicaFor = n.replicaFor
-		reply.answer = false
+		reply.granted = false
 
 		return nil
 	}
 
 	n.replicaFor = args.proposer
 	reply.replicaFor = n.replicaFor
-	reply.answer = true
+	reply.granted = true
 
 	return nil
 }
 
 func (n *Node) start() {
+	n := Node()
+	n.init()
+
 	rpc.Register(n)
 
 	// Listen on a TCP address and port
