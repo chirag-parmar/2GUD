@@ -103,12 +103,10 @@ func (t *MerkleTree) GetProof(hash string) []string {
 	curNode := t.root
 	for i := 0; i < len(path); i++ {
 		if curNode.isLeaf() {
-			fmt.Println("brekaing bad")
 			break
 		}
 
 		if (i < len(path) - 1) && curNode.bothChildrenAreLeaves() {
-			fmt.Println("brekaing bad")
 			continue
 		}
 
