@@ -36,3 +36,23 @@ func storeFile(databank string, hash string, content []byte) (e error) {
 		return error.New("Error writing to file")
 	}
 }
+
+// send an RPC request to the coordinator, wait for the response.
+// usually returns true.
+// returns false if something goes wrong.
+//
+func call(rpcname string, args interface{}, reply interface{}) (e error) {
+	c, err := rpc.DialHTTP("tcp", "127.0.0.1"+":8080")
+	if err != nil {
+		log.Fatal("dialing:", err)
+	}
+	defer c.Close()
+
+	err = c.Call(rpcname, args, reply)
+	if err == nil {
+		return true
+	}
+
+	fmt.Println(err)
+	return false
+}
