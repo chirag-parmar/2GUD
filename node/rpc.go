@@ -1,12 +1,16 @@
 package main
 
 type HeartBeatArgs struct {
-	proposer string
-	heartBeat bool
+	sender string
+	address string
+	isPrimary bool
+	maritalStatus bool
 }
 
 type HeartBeatReply struct {
-	heartBeat bool
+	receiver string
+	isPrimary bool
+	maritalStatus bool
 }
 
 type UploadRequestArgs struct {
