@@ -22,4 +22,4 @@ RUN go build node.go rpc.go tree.go util.go
 EXPOSE 8080
 
 # Run
-CMD ["./node", "--primary", "--budget=1000"]
+ENTRYPOINT ["./node"]

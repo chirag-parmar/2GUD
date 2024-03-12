@@ -55,7 +55,6 @@ type DownloadFileReply struct {
 
 type ReplicateMerkleArgs struct {
 	RequesterID string
-	Hashes []string
 	IndexMap map[string]int
 	Merkle string
 }

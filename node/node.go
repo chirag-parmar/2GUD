@@ -206,20 +206,9 @@ func (n *Node) ReplicateMerkle(args *ReplicateMerkleArgs, reply *ReplicateMerkle
 		return errors.New("Not my partner!")
 	}
 
-	orderedHashes := make([]string, len(args.Hashes))
-	for _, hash := range args.Hashes {
-		// TODO: Analyze if this part is redundant or not. Should we really do another hash check?
-		// if hash != ComputeHash(content) {
-		// 	reply.success = false
-		// 	reply.message = "computed hash does not match with provided hash"
-
-		// 	return nil
-		// }
-
-		// add to temp table
-		n.fileStatusTable[hash] = 1
-		orderedHashes[args.IndexMap[hash]] = hash 
-		n.fileBudget--
+	orderedHashes := make([]string, len(args.IndexMap))
+	for hash, index := range args.IndexMap {
+		orderedHashes[index] = hash 
 	}
 
 	t := MerkleTree{}
@@ -288,9 +277,161 @@ func (n *Node) sendFirstHeartBeat(address string) error {
 	return nil
 }
 
+func (n *Node) sendProposal(peerId string) error {
+	fmt.Printf("Sending Proposal to %s\n", peerId)
+
+	args := ProposeArgs{
+		Proposer: n.id,
+	}
+
+	var reply ProposeReply
+	err := call (n.peerTable[peerId].address, "Node.Propose", &args, &reply)
+	if err != nil {
+		return err
+	}
+
+	if !reply.Granted {
+		fmt.Printf("Peer %s rejected proposal\n", peerId)
+	}
+
+	fmt.Printf("Peer %s accepted proposal\n", peerId)
+	n.marriedTo = peerId
+	n.maritalStatus = true
+
+	return nil
+}
+
+func (n *Node) reportDeath(peerId string) error {
+	
+
+	if n.marriedTo == peerId {
+		if n.isPrimary {
+			fmt.Printf("%s -> Reporting death of my beloved replica %s\n", n.id, peerId)
+
+			n.maritalStatus = false
+			n.marriedTo = ""
+
+			return nil
+		} else {
+			fmt.Printf("%s -> Reporting death of my beloved primary %s\n", n.id, peerId)
+
+			n.isPrimary = true
+			n.maritalStatus = false
+			n.marriedTo = ""
+
+			return nil
+		}
+	}
+
+	fmt.Printf("%s -> reporting death of %s\n", n.id, peerId)
+	return nil
+}
+
+func (n *Node) replicateTrees() error {
+	var pendingTrees []string
+	for hash, status := range n.treesStatus {
+		if status == 0 {
+			pendingTrees = append(pendingTrees, hash)
+		}
+	}
+
+	if len(pendingTrees) == 0 {
+		fmt.Println("Nothing to replicate!")
+		return nil
+	}
+
+	for _, tHash := range pendingTrees {
+		replicateTreesArgs := ReplicateMerkleArgs{
+			RequesterID: n.id,
+			IndexMap: n.trees[tHash].hashToIndex,
+			Merkle: tHash,
+		}
+		var replicateTreesReply ReplicateMerkleReply
+
+		err := call(n.peerTable[n.marriedTo].address, "Node.ReplicateMerkle", &replicateTreesArgs, &replicateTreesReply)
+		if err != nil || !replicateTreesReply.Success {
+			fmt.Printf("Failure replicating trees\n")
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (n *Node) replicateFiles() error {
+	var pendingFiles []string
+	for hash, status := range n.fileStatusTable {
+		if status == 1 {
+			pendingFiles = append(pendingFiles, hash)
+		}
+	}
+
+	if len(pendingFiles) == 0 {
+		fmt.Println("Nothing to replicate!")
+		return nil
+	}
+
+	// TODO: the replica must authenticate the primary ideally
+	// TODO: atleast for now a 'if' check would do
+	uploadReqArgs := UploadRequestArgs{
+		RequiredBudget: len(pendingFiles),
+		RequesterID: n.id,
+	}
+	var uploadReqReply UploadRequestReply
+
+	err := call(n.peerTable[n.marriedTo].address, "Node.UploadRequest", &uploadReqArgs, &uploadReqReply)
+
+	if err != nil {
+		return err
+	}
+
+	if !uploadReqReply.Granted {
+		// INFO: technically we should be able to support replica that have lesser storage capacity
+		// but the entire point of the protocol is 2 Gether Until Death
+		fmt.Printf("Replica budget is exhausted! Cannot ensure redundancy")
+		return nil
+	}
+
+	filesMap := make(map[string]string)
+	for _, fileHash := range pendingFiles {
+		err, content := readFile(n.id, fileHash)
+		if err != nil {
+			return err
+		}
+
+		filesMap[fileHash] = content
+	}
+
+	uploadArgs := UploadFilesArgs {
+		RequesterID: n.id,
+		Files: filesMap,
+	}
+	var uploadReply UploadFilesReply
+
+	err = call(n.peerTable[n.marriedTo].address, "Node.UploadFiles", &uploadArgs, &uploadReply)
+	if err != nil {
+		fmt.Printf("Replication failed\n")
+		return err
+	}
+
+	if uploadReply.NumUploads != len(pendingFiles) {
+		fmt.Printf("Some files were not replicated!")
+	}
+
+	for _, uh := range uploadReply.Uploaded {
+		n.fileStatusTable[uh] = 2
+	}
+
+	return nil
+}
+
 func (n *Node) checkHeartBeats() error {
 
 	for id, peer := range n.peerTable {
+		if n.isPrimary && !n.maritalStatus && !peer.isPrimary && !peer.maritalStatus {
+			go n.sendProposal(id)
+		}
+		
 		if time.Now().Sub(peer.lastHeartBeat) > time.Second {
 			// send heartbeat
 			args := HeartBeatArgs{
@@ -378,6 +519,10 @@ func main() {
 			select {
 				case <-discoveryTicker.C:
 					n.discoverNewPeers(5)
+					if n.isPrimary && n.maritalStatus {
+						go n.replicateFiles()
+						go n.replicateTrees()
+					}
 				case <-discoveryQuit:
 					discoveryTicker.Stop()
 				case <-heartBeatTicker.C:

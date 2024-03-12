@@ -170,6 +170,7 @@ func (c *Client) DownloadFile(address string, merkle string, index int) (err err
 func main() {
 	upload := flag.Bool("upload", false, "mock upload files to the server")
 	merkle := flag.String("merkle", "", "merkle root hash")
+	ip := flag.String("ip", "", "ip of the server")
 	index := flag.Int("index", 0, "the index of the file in the tree")
 	flag.Parse()
 
@@ -180,8 +181,7 @@ func main() {
 	client := new(Client)
 	client.init()
 
-	// addresses := []string{"172.10.0.2", "172.10.0.3", "172.10.0.4"}
-	addresses := []string{"127.0.0.1", "127.0.0.1", "127.0.0.1"}
+	addresses := []string{"172.10.0.2", "172.10.0.3", "172.10.0.4"}
 
 	if *upload {
 		fmt.Println("Uploading fake data")
@@ -253,7 +253,7 @@ func main() {
 		fmt.Println(merkle3)
 	} else {
 
-		if err, content := client.DownloadFile(addresses[0], *merkle, *index); err != nil {
+		if err, content := client.DownloadFile(*ip, *merkle, *index); err != nil {
 			panic(err)
 		} else {
 			fmt.Println(content)
