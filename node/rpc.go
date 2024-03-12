@@ -5,12 +5,14 @@ type HeartBeatArgs struct {
 	Address string
 	IsPrimary bool
 	MaritalStatus bool
+	MarriedTo string
 }
 
 type HeartBeatReply struct {
 	Receiver string
 	IsPrimary bool
 	MaritalStatus bool
+	MarriedTo string
 }
 
 type UploadRequestArgs struct {

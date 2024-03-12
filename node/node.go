@@ -87,9 +87,16 @@ func (n *Node) HeartBeat(args *HeartBeatArgs, reply *HeartBeatReply) error {
 		n.peerTable[args.Sender].isPrimary = args.IsPrimary
 	}
 
+	// break double marriage if you are a replica 
+	if n.marriedTo == args.Sender && args.MarriedTo != n.id && args.MaritalStatus {
+		// as good as dead
+		n.reportDeath(n.marriedTo)
+	}
+
 	reply.Receiver = n.id
 	reply.IsPrimary = n.isPrimary
 	reply.MaritalStatus = n.maritalStatus
+	reply.MarriedTo = n.marriedTo
 
 	return nil
 }
@@ -311,6 +318,14 @@ func (n *Node) reportDeath(peerId string) error {
 			n.maritalStatus = false
 			n.marriedTo = ""
 
+			for hash, _ := range n.fileStatusTable {
+				n.fileStatusTable[hash] = 1
+			}
+
+			for hash, _ := range n.treesStatus {
+				n.treesStatus[hash] = 0
+			}
+
 			return nil
 		} else {
 			fmt.Printf("%s -> Reporting death of my beloved primary %s\n", n.id, peerId)
@@ -428,10 +443,6 @@ func (n *Node) replicateFiles() error {
 func (n *Node) checkHeartBeats() error {
 
 	for id, peer := range n.peerTable {
-		if n.isPrimary && !n.maritalStatus && !peer.isPrimary && !peer.maritalStatus {
-			go n.sendProposal(id)
-		}
-		
 		if time.Now().Sub(peer.lastHeartBeat) > time.Second {
 			// send heartbeat
 			args := HeartBeatArgs{
@@ -447,6 +458,11 @@ func (n *Node) checkHeartBeats() error {
 			
 			if err := call(peer.address, "Node.HeartBeat", &args, &reply); err != nil {
 				fmt.Printf("Missed heartbeat to %s\n", id)
+
+				if time.Now().Sub(peer.lastHeartBeat) > (60*time.Second) {
+					n.reportDeath(id)
+				}
+
 				return err
 			}
 
@@ -456,6 +472,11 @@ func (n *Node) checkHeartBeats() error {
 				reply.IsPrimary, 
 				reply.MaritalStatus,
 			)
+
+			if reply.Receiver == n.marriedTo && n.id != reply.MarriedTo && reply.MaritalStatus {
+				// as good as dead
+				n.reportDeath(n.marriedTo)
+			}
 
 			// update peer information
 			peer.lastHeartBeat = time.Now()
