@@ -178,40 +178,30 @@ func (n *Node) ProposeReplication(args *ProposeReplicationArgs, reply *ProposeRe
 	return nil
 }
 
-//
-// send an RPC request to the coordinator, wait for the response.
-// usually returns true.
-// returns false if something goes wrong.
-//
-func call(rpcname string, args interface{}, reply interface{}) (e error) {
-	// c, err := rpc.DialHTTP("tcp", "127.0.0.1"+":1234")
-	sockname := coordinatorSock()
-	c, err := rpc.DialHTTP("unix", sockname)
-	if err != nil {
-		log.Fatal("dialing:", err)
-	}
-	defer c.Close()
-
-	err = c.Call(rpcname, args, reply)
-	if err == nil {
-		return true
-	}
-
-	fmt.Println(err)
-	return false
-}
-
 func (n *Node) start() {
 	rpc.Register(n)
-	rpc.HandleHTTP()
-	//l, e := net.Listen("tcp", ":1234")
-	sockname := coordinatorSock()
-	os.Remove(sockname)
-	l, e := net.Listen("unix", sockname)
-	if e != nil {
-		log.Fatal("listen error:", e)
+
+	// Listen on a TCP address and port
+	listener, err := net.Listen("tcp", "127.0.0.1:8080")
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
 	}
-	go http.Serve(l, nil)
+	defer listener.Close()
+
+	fmt.Println("RPC server listening on", listener.Addr())
+
+	// Accept incoming connections
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			fmt.Println("Error accepting connection:", err)
+			continue
+		}
+
+		// Handle the connection in a separate goroutine using rpc.ServeConn
+		go rpc.ServeConn(conn)
+	}
 }
 
 
