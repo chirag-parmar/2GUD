@@ -11,3 +11,11 @@ We can use the usual merkle trees, but the problem is that they need a lot of ha
 * The files are small enough for HTTP multipart form data to ignore usage of FTP.
 * The files are larger than what non multipart HTTP requests can handle.
 * max file size is 1MB, following the above two rules.
+* server capaity minimum of 1TB = 10^6 files
+* one merkle node consumes = 8 + 8 + 8 + 32 = 56 bytes (roughly) (left pointer + right pointer + weight + hash)
+* one entry in the hash table consumes about 40bytes (32 bytes hash + 8 bytes int)
+* total space 56*(2n - 1) + 40n = 152n - 56 ~ 152n
+* if we have 1TB of space we can store 1M files = 1M merkle leaf nodes => 152 * 10^6 bytes about 152MB for one server
+* A machine with 16GB of RAM can probably manage merkle trees for 100 servers at a time.
+* we will take this as a limit for distributing and define a single leader distributed system for file storage
+* 

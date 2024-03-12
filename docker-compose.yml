@@ -1,0 +1,43 @@
+version: '3'
+
+services:
+  zama_node_1:
+    image: zama-node
+    networks:
+      my_network:
+        ipv4_address: 172.10.0.2
+  zama_node_2:
+    image: zama-node
+    networks:
+      my_network:
+        ipv4_address: 172.10.0.3
+  zama_node_3:
+    image: zama-node
+    networks:
+      my_network:
+        ipv4_address: 172.10.0.4
+  zama_node_4:
+    image: zama-node
+    networks:
+      my_network:
+        ipv4_address: 172.10.0.5
+  zama_node_5:
+    image: zama-node
+    networks:
+      my_network:
+        ipv4_address: 172.10.0.6
+  client:
+    image: zama-client
+    stdin_open: true # docker run -i
+    tty: true        # docker run -t
+    networks:
+      my_network:
+        ipv4_address: 172.10.0.7
+
+networks:
+  my_network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.10.0.0/24

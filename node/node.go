@@ -1,11 +1,11 @@
 package main
 
 import (
-   "fmt"
+	"fmt"
 //    "log"
-   "net"
-   "net/rpc"
-   "math/rand"
+	"net"
+	"net/rpc"
+	"math/rand"
 //    "errors"
 )
 
@@ -36,6 +36,10 @@ func (n *Node) init() {
 	id_bytes := make([]byte, 32)
     rand.Read(id_bytes)
 	n.id = fmt.Sprintf("%x", id_bytes)
+}
+
+func (n *Node) advertise() {
+	
 }
 
 func (n *Node) ReportHeartBeat(args *HeartBeatArgs, reply *HeartBeatReply) (e error) {
@@ -186,8 +190,10 @@ func (n *Node) start() {
 
 	rpc.Register(n)
 
+	localIP := GetLocalIP()
+
 	// Listen on a TCP address and port
-	listener, err := net.Listen("tcp", "127.0.0.1:8080")
+	listener, err := net.Listen("tcp", localIP + ":8080")
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
@@ -209,4 +215,7 @@ func (n *Node) start() {
 	}
 }
 
-
+func main() {
+	n := Node{}
+	n.start()
+}

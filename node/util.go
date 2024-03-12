@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"os"
 	"net/rpc"
+	"net"
 )
 
 func ComputeHash(content string) string {
@@ -46,8 +47,8 @@ func storeFile(node_id string, databank string, hash string, content string) (er
 // usually returns true.
 // returns false if something goes wrong.
 //
-func call(rpcname string, args interface{}, reply interface{}) (e error) {
-	c, err := rpc.DialHTTP("tcp", "127.0.0.1"+":8080")
+func call(ip string, rpcname string, args interface{}, reply interface{}) (e error) {
+	c, err := rpc.DialHTTP("tcp", ip + ":8080")
 	if err != nil {
 		return err
 	}
@@ -59,4 +60,21 @@ func call(rpcname string, args interface{}, reply interface{}) (e error) {
 	}
 
 	return err
+}
+
+// source: https://stackoverflow.com/a/31551220
+func GetLocalIP() string {
+    addrs, err := net.InterfaceAddrs()
+    if err != nil {
+        return ""
+    }
+    for _, address := range addrs {
+        // check the address type and if it is not a loopback the display it
+        if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+            if ipnet.IP.To4() != nil {
+                return ipnet.IP.String()
+            }
+        }
+    }
+    return ""
 }
