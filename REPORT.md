@@ -19,3 +19,9 @@ We can use the usual merkle trees, but the problem is that they need a lot of ha
 * A machine with 16GB of RAM can probably manage merkle trees for 100 servers at a time.
 * we will take this as a limit for distributing and define a single leader distributed system for file storage
 * 
+
+
+
+
+1. control over indexes should be with client and not the server
+2. AppendLeaf was designed so that new files can be added to the same merkle root. Good for streamed, pause and resume uploading etc.

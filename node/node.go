@@ -5,16 +5,21 @@ import (
 	"flag"
 	"net"
 	"net/rpc"
+	"net/http"
 	"math/rand"
 	"github.com/schollz/peerdiscovery"
 	"time"
+	"os"
+    "os/signal"
+    "syscall"
+	"errors"
 )
 
 type Peer struct {
 	address string
 	isPrimary bool
 	maritalStatus bool
-	lastHeartBeat time.Duration
+	lastHeartBeat time.Time
 }
 
 type Node struct {
@@ -32,6 +37,8 @@ type Node struct {
 
 	fileBookings map[string]int
 	fileStatusTable map[string]int
+
+	trees map[string]*MerkleTree
 }
 
 func (n *Node) init(address string, isPrimary bool, fileBudget int) {
@@ -56,229 +63,227 @@ func (n *Node) init(address string, isPrimary bool, fileBudget int) {
 	n.marriedTo = ""
 }
 
-func (n *Node) HeartBeat(args *HeartBeatArgs, reply *HeartBeatReply) {
-	fmt.Printf("Got HeartBeat from %s -> address: %s, isPrimary: %t, maritalStatus: %t",
-		args.sender,
-		args.address,
-		args.isPrimary,
-		args.maritalStatus
+func (n *Node) HeartBeat(args *HeartBeatArgs, reply *HeartBeatReply) error {
+	fmt.Printf("Got HeartBeat from %s -> address: %s, isPrimary: %t, maritalStatus: %t\n",
+		args.Sender,
+		args.Address,
+		args.IsPrimary,
+		args.MaritalStatus,
 	)
 
-	if _, ok := n.peerTable[args.sender]; !ok {
-		n.peerTable[args.sender] = &Peer{
-			address: args.address
-			isPrimary: args.isPrimary
-			maritalStatus: args.maritalStatus
-			lastHeartBeat: time.Now()
+	if _, ok := n.peerTable[args.Sender]; !ok {
+		n.peerTable[args.Sender] = &Peer{
+			address: args.Address,
+			isPrimary: args.IsPrimary,
+			maritalStatus: args.MaritalStatus,
+			lastHeartBeat: time.Now(),
 		}
 	} else {
-		n.peerTable[args.sender].lastHeartBeat = time.Now()
-		n.peerTable[args.sender].maritalStatus = args.maritalStatus
-		n.peerTable[args.sender].isPrimary = args.isPrimary
+		n.peerTable[args.Sender].lastHeartBeat = time.Now()
+		n.peerTable[args.Sender].maritalStatus = args.MaritalStatus
+		n.peerTable[args.Sender].isPrimary = args.IsPrimary
 	}
 
-	reply.receiver = n.id
-	reply.isPrimary = n.isPrimary
-	reply.maritalStatus = n.maritalStatus
-}
-
-func (n *Node) UploadRequest(args *UploadRequestArgs, reply *UploadRequestReply) (e error) {
-	// check if storage is available
-	if n.fileBudget < args.requiredBudget{
-		reply.granted = false
-		reply.available = n.fileBudget
-
-		return nil
-	}
-
-	n.fileBudget -= args.requiredBudget
-	n.bookings[args.requesterID] = args.requiredBudget
-
-	reply.granted = true
-	reply.available = n.fileBudget
+	reply.Receiver = n.id
+	reply.IsPrimary = n.isPrimary
+	reply.MaritalStatus = n.maritalStatus
 
 	return nil
 }
 
-func (n *Node) UploadFiles(args *UploadFilesArgs, reply *UploadFilesReply) (e error) {
-	if _, ok := n.bookings[args.requesterID]; !ok {
-		reply.numUploads = 0
-		reply.success = false
-		reply.uploaded = nil
-		reply.message = "no bookings made!"
+func (n *Node) UploadRequest(args *UploadRequestArgs, reply *UploadRequestReply) error {
+	// check if storage is available
+	if n.fileBudget < args.RequiredBudget{
+		reply.Granted = false
+		reply.Available = n.fileBudget
 
 		return nil
 	}
 
-	if n.bookings[args.requesterID] < len(args.files) {
-		reply.numUploads = 0
-		reply.success = false
-		reply.uploaded = nil
-		reply.message = "fileBudget crossed!"
+	n.fileBudget -= args.RequiredBudget
+	n.fileBookings[args.RequesterID] = args.RequiredBudget
 
-		return nil
+	reply.Granted = true
+	reply.Available = n.fileBudget
+
+	return nil
+}
+
+func (n *Node) UploadFiles(args *UploadFilesArgs, reply *UploadFilesReply) error {
+	if _, ok := n.fileBookings[args.RequesterID]; !ok {
+		return errors.New("no bookings made!")
 	}
 
-	reply.numUploads = 0
-	for hash, content := range args.files {
+	if n.fileBookings[args.RequesterID] < len(args.Files) {
+		return errors.New("fileBudget crossed!")
+	}
+
+	reply.NumUploads = 0
+	for hash, content := range args.Files {
 		if hash != ComputeHash(content) {
-			reply.success = false
-			reply.message = "computed hash does not match with provided hash"
-
-			return nil
+			return errors.New("computed hash does not match with provided hash!")
 		}
-		storeFile(n.id, "primary", hash, content)
+		storeFile(n.id, hash, content)
 
 		// add to temp table
-		n.statusTable[hash] = 0
+		n.fileStatusTable[hash] = 0
 
-		reply.uploaded = append(reply.uploaded, hash)
-		reply.numUploads++
-		n.bookings[args.requesterID]--
+		reply.Uploaded = append(reply.Uploaded, hash)
+		reply.NumUploads++
+		n.fileBookings[args.RequesterID]--
 	}
 
-	reply.success = true
 	return nil
 }
 
-func (n *Node) CommitFiles(args *CommitFilesArgs, reply *CommitFilesReply) (e error) {
-	if _, ok := n.bookings[args.requesterID]; !ok {
-		reply.success = false
-		reply.message = "bookings not made"
-		reply.merkle = ""
-
-		return nil
+func (n *Node) CommitFiles(args *CommitFilesArgs, reply *CommitFilesReply) error {
+	if _, ok := n.fileBookings[args.RequesterID]; !ok {
+		return errors.New("Bookings not made!")
 	}
 
-	for _, hash := range args.hashes {
-		n.statusTable[hash] = 1
+	t := MerkleTree{}
+	isFirst := true
+	for _, hash := range args.Hashes {
+		if _, ok := n.fileStatusTable[hash]; !ok {
+			return errors.New("Hash was not uploaded!")		
+		}
+		
+		n.fileStatusTable[hash] = 1
+		if isFirst {
+			t.Init(hash)
+			isFirst = false
+		} else {
+			t.AddLeaf(hash)
+		}
 	}
 
-	// TODO: create merkle tree here
-	reply.merkle = ""
-	reply.success = true
+	reply.Merkle = t.root.hash
+	reply.IndexMap = t.indexMap
 
 	// reclaim file budget
-	if n.bookings[args.requesterID] > 0 {
-		n.fileBudget += n.bookings[args.requesterID];
-		delete(n.bookings, args.requesterID)
+	if n.fileBookings[args.RequesterID] > 0 {
+		n.fileBudget += n.fileBookings[args.RequesterID];
 	}
+
+	// remove the booking entry made
+	delete(n.fileBookings, args.RequesterID)
 
 	return nil
 }
 
-func (n *Node) Replicate(args *ReplicateArgs, reply *ReplicateReply) (e error) {
-	if args.requesterID != n.replicaFor {
-		reply.success = false
-		reply.message = "Not your replica"
-		reply.numReplicated = 0
-		reply.replicated = nil
+// func (n *Node) Replicate(args *ReplicateArgs, reply *ReplicateReply) (e error) {
+// 	if args.requesterID != n.marriedTo {
+// 		reply.success = false
+// 		reply.message = "Not your replica"
+// 		reply.numReplicated = 0
+// 		reply.replicated = nil
 
-		return nil
-	}
+// 		return nil
+// 	}
 
-	reply.numReplicated = 0
-	for hash, content := range args.files {
-		if hash != ComputeHash(content) {
-			reply.success = false
-			reply.message = "computed hash does not match with provided hash"
+// 	reply.numReplicated = 0
+// 	for hash, content := range args.files {
+// 		if hash != ComputeHash(content) {
+// 			reply.success = false
+// 			reply.message = "computed hash does not match with provided hash"
 
-			return nil
-		}
-		storeFile(n.id, "replica", hash, content)
+// 			return nil
+// 		}
+// 		storeFile(n.id, hash, content)
 
-		// add to temp table
-		n.statusTable[hash] = 2
+// 		// add to temp table
+// 		n.fileStatusTable[hash] = 2
 
-		reply.replicated = append(reply.replicated, hash)
-		reply.numReplicated++
-		n.replicaBudget--
-	}
+// 		reply.replicated = append(reply.replicated, hash)
+// 		reply.numReplicated++
+// 		n.replicaBudget--
+// 	}
 
-	reply.success = true
-	return nil
-}
+// 	reply.success = true
+// 	return nil
+// }
 
-func (n *Node) ProposeReplication(args *ProposeReplicationArgs, reply *ProposeReplicationReply) (e error) {
-	if n.replicaFor != "" {
-		reply.replicaFor = n.replicaFor
-		reply.granted = false
+// func (n *Node) ProposeReplication(args *ProposeReplicationArgs, reply *ProposeReplicationReply) (e error) {
+// 	if n.replicaFor != "" {
+// 		reply.replicaFor = n.replicaFor
+// 		reply.granted = false
 
-		return nil
-	}
+// 		return nil
+// 	}
 
-	n.replicaFor = args.proposer
-	reply.replicaFor = n.replicaFor
-	reply.granted = true
+// 	n.replicaFor = args.proposer
+// 	reply.replicaFor = n.replicaFor
+// 	reply.granted = true
 
-	return nil
-}
+// 	return nil
+// }
 
-func (n *Node) sendFirstHeartBeat(address string) (e error) {
+func (n *Node) sendFirstHeartBeat(address string) error {
 	args := HeartBeatArgs{
-		sender: n.id,
-		address: n.address
-		isPrimary: n.isPrimary
-		maritalStatus: n.maritalStatus
+		Sender: n.id,
+		Address: n.address,
+		IsPrimary: n.isPrimary,
+		MaritalStatus: n.maritalStatus,
 	}
 	
 	var reply HeartBeatReply
 
 	fmt.Printf("Sending first heart beat to: %s\n", address)
 	
-	if err := call(address, "Node.HeartBeat", &args, &reply); e != nil {
+	if err := call(address, "Node.HeartBeat", &args, &reply); err != nil {
+		fmt.Printf("Missed first heartbeat to %s\n", address)
 		return err
 	}
 
 	fmt.Printf("%s-> id: %s, isPrimary: %t, maritalStatus: %t\n", 
 		address, 
-		reply.receiver, 
-		reply.isPrimary, 
-		reply.maritalStatus,
+		reply.Receiver, 
+		reply.IsPrimary, 
+		reply.MaritalStatus,
 	)
 
-	n.peerTable[reply.receiver] = &Peer{
+	n.peerTable[reply.Receiver] = &Peer{
 		address: address,
-		isPrimary: reply.isPrimary,
-		maritalStatus: reply.maritalStatus,
+		isPrimary: reply.IsPrimary,
+		maritalStatus: reply.MaritalStatus,
 		lastHeartBeat: time.Now(),
 	}
 
 	return nil
 }
 
-func (n *Node) checkHeartBeats() (e error) {
+func (n *Node) checkHeartBeats() error {
 
 	for id, peer := range n.peerTable {
-		if (time.Now() - peer.lastHeartBeat) > time.Second {
+		if time.Now().Sub(peer.lastHeartBeat) > time.Second {
 			// send heartbeat
 			args := HeartBeatArgs{
-				sender: n.id,
-				address: n.address
-				isPrimary: n.isPrimary
-				maritalStatus: n.maritalStatus
+				Sender: n.id,
+				Address: n.address,
+				IsPrimary: n.isPrimary,
+				MaritalStatus: n.maritalStatus,
 			}
 
 			var reply HeartBeatReply
 
 			fmt.Printf("Sending heart beat to: %s\n", id)
 			
-			if err := call(peer.address, "Node.HeartBeat", &args, &reply); e != nil {
+			if err := call(peer.address, "Node.HeartBeat", &args, &reply); err != nil {
 				fmt.Printf("Missed heartbeat to %s\n", id)
 				return err
 			}
 
 			fmt.Printf("%s-> ip: %s, isPrimary: %t, maritalStatus: %t\n", 
-				reply.receiver, 
+				reply.Receiver, 
 				peer.address, 
-				reply.isPrimary, 
-				reply.maritalStatus,
+				reply.IsPrimary, 
+				reply.MaritalStatus,
 			)
 
 			// update peer information
 			peer.lastHeartBeat = time.Now()
-			peer.isPrimary = reply.isPrimary
-			peer.maritalStatus = reply.maritalStatus
+			peer.isPrimary = reply.IsPrimary
+			peer.maritalStatus = reply.MaritalStatus
 		}
 	}
 
@@ -286,18 +291,32 @@ func (n *Node) checkHeartBeats() (e error) {
 }
 
 func (n *Node) discoverNewPeers(limit int) {
+	//  TODO: Handle Error
 	discoveries, _ := peerdiscovery.Discover(peerdiscovery.Settings{Limit: limit})
 	for _, d := range discoveries {
-		if _, ok := n.discoveredAddresses[address]; !ok {
-			fmt.Printf("Discovered new peer: %s", address)
-			n.discoveredAddresses[address] = struct{}{}
-			go n.sendFirstHeartBeat(address)
+		if _, ok := n.discoveredAddresses[d.Address]; !ok {
+			fmt.Printf("Discovered new peer: %s\n", d.Address)
+			n.discoveredAddresses[d.Address] = struct{}{}
+			go n.sendFirstHeartBeat(d.Address)
 		}
 	}
 }
 
-func (n *Node) start() {
+func main() {
+	isPrimary := flag.Bool("primary", false, "is this node a primary node")
+	fileBudget := flag.Int("budget", 1000, "how many 1MB files can this node manage")
+
+	gracefulShutDown := make(chan os.Signal, 1)
+	signal.Notify(gracefulShutDown, syscall.SIGINT, syscall.SIGTERM)
+
+	// create a new instance
+	n := new(Node)
+	
+	// initialize
+	n.init("127.0.0.1", *isPrimary, *fileBudget)
+	
 	rpc.Register(n)
+	rpc.HandleHTTP()
 
 	// Listen on a TCP address and port
 	listener, err := net.Listen("tcp", n.address + ":8080")
@@ -306,11 +325,13 @@ func (n *Node) start() {
 		return
 	}
 	defer listener.Close()
+	go http.Serve(listener, nil)
 
 	fmt.Println("RPC server listening on", listener.Addr())
 
 	// we could use the same quit channel but seperate control is reserverd for future improvements
-	discoveryTicker := time.NewTicker(30 * time.Second)
+	// discoveryTicker should technically tick at a much lower frequency.
+	discoveryTicker := time.NewTicker(1 * time.Second)
 	discoveryQuit := make(chan struct{})
 	heartBeatTicker := time.NewTicker(1 * time.Second)
 	heartBeatQuit := make(chan struct{})
@@ -318,45 +339,21 @@ func (n *Node) start() {
 	go func() {
 		for {
 			select {
-				case <- discoveryTicker.C:
+				case <-discoveryTicker.C:
 					n.discoverNewPeers(5)
-				case <- discoveryQuit:
+				case <-discoveryQuit:
 					discoveryTicker.Stop()
-				case <- heartBeatTicker.C:
+				case <-heartBeatTicker.C:
 					n.checkHeartBeats()
-				case <- heartBeatQuit:
+				case <-heartBeatQuit:
 					heartBeatTicker.Stop()
 					return
 			}
 		}
 	}()
-	defer discoveryQuit<-struct{}{}
-	defer heartBeatQuit<-struct{}{}
+	// defer (discoveryQuit <- struct{}{})
+	// defer (heartBeatQuit <- struct{}{})
 
-	// Accept incoming connections
-	for {
-		conn, err := listener.Accept()
-		if err != nil {
-			fmt.Println("Error accepting connection:", err)
-			continue
-		}
-
-		// Handle the connection in a separate goroutine using rpc.ServeConn
-		go rpc.ServeConn(conn)
-	}
-	
-}
-
-func main() {
-	isPrimary := flag.Bool("primary", false, "is this node a primary node")
-	fileBudget := flag.Int("budget", false, "how many 1MB files can this node manage")
-
-	// create a new instance
-	n := Node{}
-	
-	// initialize
-	n.init(GetLocalIP(), isPrimary, fileBudget)
-	
-	// start server
-	n.start()
+	<-gracefulShutDown
+	fmt.Printf("Gracefully shutting down!")
 }

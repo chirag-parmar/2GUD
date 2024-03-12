@@ -17,25 +17,15 @@ func ComputeHash(content string) string {
   	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
-func storeFile(node_id string, databank string, hash string, content string) (err error) {
+func storeFile(node_id string, hash string, content string) error {
 	// Create the uploads folder if it doesn't already exist
-	err = os.MkdirAll(fmt.Sprintf("./%s", node_id), os.ModePerm)
-	if err != nil {
-		return errors.New("Error creating directory for storing file")
-	}
-
-	if databank != "replica" {
-		databank = "primary"
-	}
-
-	// Create the uploads folder if it doesn't already exist
-	err = os.MkdirAll(fmt.Sprintf("./%s/%s", node_id, databank), os.ModePerm)
+	err := os.MkdirAll(fmt.Sprintf("./%s", node_id), os.ModePerm)
 	if err != nil {
 		return errors.New("Error creating directory for storing file")
 	}
 
 	// Create a new file in the uploads directory
-	err = os.WriteFile(fmt.Sprintf("./%s/%s/%s", node_id, databank, hash), []byte(content), 0644)
+	err = os.WriteFile(fmt.Sprintf("./%s/%s", node_id, hash), []byte(content), 0644)
 	if err != nil {
 		return errors.New("Error writing to file")
 	}

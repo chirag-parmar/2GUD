@@ -7,11 +7,12 @@ WORKDIR /app
 # # Download Go modules
 COPY go.mod ./
 COPY go.sum ./
-RUN go mod download
+RUN go mod download;
 
 # Copy the source code. Note the slash at the end, as explained in
 # https://docs.docker.com/reference/dockerfile/#copy
 COPY *.go ./
+RUN go build node.go rpc.go tree.go util.go
 
 # Optional:
 # To bind to a TCP port, runtime parameters must be supplied to the docker command.
@@ -21,4 +22,4 @@ COPY *.go ./
 EXPOSE 8080
 
 # Run
-CMD ["go", "run", "node.go", "rpc.go", "tree.go", "util.go"]
+CMD ["./node", "--primary", "--budget=1000"]

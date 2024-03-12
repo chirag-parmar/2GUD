@@ -1,45 +1,46 @@
 package main
 
 type HeartBeatArgs struct {
-	proposer string
-	heartBeat bool
+	Sender string
+	Address string
+	IsPrimary bool
+	MaritalStatus bool
 }
 
 type HeartBeatReply struct {
-	heartBeat bool
+	Receiver string
+	IsPrimary bool
+	MaritalStatus bool
 }
 
 type UploadRequestArgs struct {
-	requiredBudget int
-	requesterID string
+	RequiredBudget int
+	RequesterID string
 }
 
 type UploadRequestReply struct {
-	granted bool
-	available int
+	Granted bool
+	Available int
 }
 
 type UploadFilesArgs struct {
-	requesterID string
-	files map[string]string
+	RequesterID string
+	Files map[string]string
 }
 
 type UploadFilesReply struct {
-	success bool
-	numUploads int
-	message string
-	uploaded []string
+	NumUploads int
+	Uploaded []string
 }
 
 type CommitFilesArgs struct {
-	hashes []string
-	requesterID string
+	Hashes []string
+	RequesterID string
 }
 
 type CommitFilesReply struct {
-	success bool
-	message string
-	merkle string
+	Merkle string
+	IndexMap map[string]int
 }
 
 type ReplicateArgs struct {
