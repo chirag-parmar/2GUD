@@ -149,7 +149,7 @@ func (n *Node) Replicate(args *ReplicateArgs, reply *ReplicateReply) (e error) {
 
 			return nil
 		}
-		storeFile("primary", hash, content)
+		storeFile("replica", hash, content)
 
 		// add to temp table
 		n.statusTable[hash] = 0
