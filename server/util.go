@@ -1,23 +1,26 @@
+package main
+
 import (
 	"errors"
 	"fmt"
 	"crypto/sha256"
 	"os"
+	"net/rpc"
 )
 
-func ComputeHash(content []byte) []byte {
+func ComputeHash(content string) string {
 	//check hash of the file
 	h := sha256.New()
-	h.Write(content)
+	h.Write([]byte(content))
 
   	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
-func storeFile(databank string, hash string, content []byte) (e error) {
+func storeFile(node_id string, databank string, hash string, content string) (err error) {
 	// Create the uploads folder if it doesn't already exist
-	err = os.MkdirAll(fmt.Sprintf("./%s", NODE_ID), os.ModePerm)
+	err = os.MkdirAll(fmt.Sprintf("./%s", node_id), os.ModePerm)
 	if err != nil {
-		return error.New("Error creating directory for storing file")
+		return errors.New("Error creating directory for storing file")
 	}
 
 	if databank != "replica" {
@@ -25,16 +28,18 @@ func storeFile(databank string, hash string, content []byte) (e error) {
 	}
 
 	// Create the uploads folder if it doesn't already exist
-	err = os.MkdirAll(fmt.Sprintf("./%s/%s", NODE_ID, databank), os.ModePerm)
+	err = os.MkdirAll(fmt.Sprintf("./%s/%s", node_id, databank), os.ModePerm)
 	if err != nil {
-		return error.New("Error creating directory for storing file")
+		return errors.New("Error creating directory for storing file")
 	}
 
 	// Create a new file in the uploads directory
-	err = os.WriteFile(fmt.Sprintf("./%s/%s/%s", NODE_ID, databank, hash), content, 0644)
+	err = os.WriteFile(fmt.Sprintf("./%s/%s/%s", node_id, databank, hash), []byte(content), 0644)
 	if err != nil {
-		return error.New("Error writing to file")
+		return errors.New("Error writing to file")
 	}
+
+	return nil
 }
 
 // send an RPC request to the coordinator, wait for the response.
@@ -44,15 +49,14 @@ func storeFile(databank string, hash string, content []byte) (e error) {
 func call(rpcname string, args interface{}, reply interface{}) (e error) {
 	c, err := rpc.DialHTTP("tcp", "127.0.0.1"+":8080")
 	if err != nil {
-		log.Fatal("dialing:", err)
+		return err
 	}
 	defer c.Close()
 
 	err = c.Call(rpcname, args, reply)
 	if err == nil {
-		return true
+		return nil
 	}
 
-	fmt.Println(err)
-	return false
+	return err
 }

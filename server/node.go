@@ -2,13 +2,16 @@ package main
 
 import (
    "fmt"
-   "log"
+//    "log"
    "net"
    "net/rpc"
-   "errors"
+   "math/rand"
+//    "errors"
 )
 
 type Node struct {
+	id string
+
 	replicaFor string
 	missedHeartBeats int
 
@@ -30,7 +33,9 @@ func (n *Node) init() {
 	n.fileBudget = 1000
 	n.replicaBudget = 1000
 	
-	
+	id_bytes := make([]byte, 32)
+    rand.Read(id_bytes)
+	n.id = fmt.Sprintf("%x", id_bytes)
 }
 
 func (n *Node) ReportHeartBeat(args *HeartBeatArgs, reply *HeartBeatReply) (e error) {
@@ -82,20 +87,19 @@ func (n *Node) UploadFiles(args *UploadFilesArgs, reply *UploadFilesReply) (e er
 	}
 
 	reply.numUploads = 0
-	reply.uploaded = []
-	for hash, content in args.files {
-		if hash != computeHash(content) {
+	for hash, content := range args.files {
+		if hash != ComputeHash(content) {
 			reply.success = false
 			reply.message = "computed hash does not match with provided hash"
 
 			return nil
 		}
-		storeFile("primary", hash, content)
+		storeFile(n.id, "primary", hash, content)
 
 		// add to temp table
 		n.statusTable[hash] = 0
 
-		reply.uploaded.append(hash)
+		reply.uploaded = append(reply.uploaded, hash)
 		reply.numUploads++
 		n.bookings[args.requesterID]--
 	}
@@ -113,7 +117,7 @@ func (n *Node) CommitFiles(args *CommitFilesArgs, reply *CommitFilesReply) (e er
 		return nil
 	}
 
-	for hash in args.hashes {
+	for _, hash := range args.hashes {
 		n.statusTable[hash] = 1
 	}
 
@@ -141,20 +145,19 @@ func (n *Node) Replicate(args *ReplicateArgs, reply *ReplicateReply) (e error) {
 	}
 
 	reply.numReplicated = 0
-	reply.replicated = []
-	for hash, content in args.files {
-		if hash != computeHash(content) {
+	for hash, content := range args.files {
+		if hash != ComputeHash(content) {
 			reply.success = false
 			reply.message = "computed hash does not match with provided hash"
 
 			return nil
 		}
-		storeFile("replica", hash, content)
+		storeFile(n.id, "replica", hash, content)
 
 		// add to temp table
-		n.statusTable[hash] = 0
+		n.statusTable[hash] = 2
 
-		reply.replicated.append(hash)
+		reply.replicated = append(reply.replicated, hash)
 		reply.numReplicated++
 		n.replicaBudget--
 	}
@@ -179,7 +182,6 @@ func (n *Node) ProposeReplication(args *ProposeReplicationArgs, reply *ProposeRe
 }
 
 func (n *Node) start() {
-	n := Node()
 	n.init()
 
 	rpc.Register(n)

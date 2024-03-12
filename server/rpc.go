@@ -1,4 +1,7 @@
+package main
+
 type HeartBeatArgs struct {
+	proposer string
 	heartBeat bool
 }
 
@@ -11,7 +14,7 @@ type UploadRequestArgs struct {
 	requesterID string
 }
 
-type UploadReqeustReply struct {
+type UploadRequestReply struct {
 	granted bool
 	available int
 }
@@ -46,9 +49,9 @@ type ReplicateArgs struct {
 
 type ReplicateReply struct {
 	success bool
-	numUploads int
+	numReplicated int
 	message string
-	uploaded []string
+	replicated []string
 }
 
 type ProposeReplicationArgs struct {
