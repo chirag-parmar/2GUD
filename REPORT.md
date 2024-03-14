@@ -1,33 +1,3 @@
-### Selecting an appropriate tree type
-
-We can use the usual merkle trees, but the problem is that they need a lot of hashes to be computed. If we increase the radix of these trees such that each parent node is a hash of `n` child nodes (`n`-ary merkle tree) then we save some hashing computations but increase our proof size. 
-
-|- Type -|- no. of leaves -|- proof size -|- hashes to compute (in total) -|- hashes to compute (for adding a new file) -|- hashes (for updating a file) -|
-| Merkle Tree | n | O(log_2(n)) | n + n/2 + n/4 + .... + 1 = 2n(1+n) => O(n^2) | log_2(n) | log_2(n) |
-| k-width Merkle Tree | n | log_K(n) | n + n/k + n/(k^2) + n/(k^3) + ... + 1 = kn(1+n)/(k - 1) =
-
-### Server assumptions
-
-* The files are small enough for HTTP multipart form data to ignore usage of FTP.
-* The files are larger than what non multipart HTTP requests can handle.
-* max file size is 1MB, following the above two rules.
-* server capaity minimum of 1TB = 10^6 files
-* one merkle node consumes = 8 + 8 + 8 + 32 = 56 bytes (roughly) (left pointer + right pointer + weight + hash)
-* one entry in the hash table consumes about 40bytes (32 bytes hash + 8 bytes int)
-* total space 56*(2n - 1) + 40n = 152n - 56 ~ 152n
-* if we have 1TB of space we can store 1M files = 1M merkle leaf nodes => 152 * 10^6 bytes about 152MB for one server
-* A machine with 16GB of RAM can probably manage merkle trees for 100 servers at a time.
-* we will take this as a limit for distributing and define a single leader distributed system for file storage
-* 
-
-
-
-
-1. control over indexes should be with client and not the server
-2. AddLeaf was designed so that new files can be added to the same merkle root. Good for streamed, pause and resume uploading etc.
-3. Lots of garbage cleaning is required when considering edge cases of node failure
-4. How are we going to handle address change due to role switch (node failure)
-
 # Report - Programming Task
 
 > Problem: Implement a file server that use merkle trees to provide proof to the client that the file is corrupted. Use networking and make the server design as ready for production as possible.
@@ -192,12 +162,33 @@ The first leaf is itself a root node. For every leaf added after that a recursiv
 
 Proof construction follows the textbook method of converting the index of the leaf to a binary number and walking down the tree based on the bit (`0` left, `1` right). As it traverses down, it includes the adjacent node hash to the proof array. This implementation however also adds an instruction to every hash in the proof (a `0` or `1`) of whether the proof hash in the array should be concatenated ot the left or the right. So that verifiers don't have to repeat the process of converting the index to binary.
 
-#### Drawbacks
-1. While replicas can switch to a primary node, a primary node does not switch to a replica role ever. 
-2. Since a primary node replicates all its data to its replica node, the two must have equal storage capacities to avoid losing data or unused storage space. 
+#### Some rough calculations
 
+* one merkle node consumes = 8 + 8 + 8 + 32 = 56 bytes (roughly) (left pointer + right pointer + weight + hash)
+* one entry in the hash table consumes about 40bytes (32 bytes hash + 8 bytes int)
+* Total space 56*(2n - 1) + 40n + 40n= 192n - 56 ~ 192n
+* if we have 1TB of space, we can store 1M files = 1M merkle leaf nodes => 192 * 10^6 bytes about 192MB for one server
 
+## Drawbacks and Improvements
 
-In a network with many servers (or nodes), the protocol defines a way of matching node pairs using a traditional marriage proposal (minus the romance). A node can either be a primary node or a replica node. Only the primary node can initiate a proposal and the replica can accept or reject based on its current marital status. Once the match is formed, if the replica *dies* (defined later)
+### Drawbacks
 
+1. In the current implementation and protocol definition, a client independently contacts a primary node and has to remember the primary node it contacted. Moreover, in case of death, it will also have to find the associated replica node. This is not desirable.
+2. A primary node replicates all its data to its replica node, the two must have equal storage capacities to avoid losing data or unused storage space.
+3. Storage space is measured in number of files than actual storage space. This is a problem because 1 million 1KB files will only consume 1GB of disk space which is only 1% utilization of the server. Therefore a file budget type metric system is not ideal.
+4. One clients request is only handled by one node pair. This limits the maximum files under one upload process to be 1 million. Moreover, this will leave small residue budget on servers that cannot be utilized by any clients.
 
+### Improvement - Abstracting out the Merkling
+
+Exsisting P2P tech like IPFS define a content addressable network, hence routing to specific nodes is not a problem when a piece of content is queried. But such a system beats the purpose of a merkled storage because querying will require the client to hold in memory the unique identifiers of individual files.
+
+In 2GUD, we can define a special node that abstracts out the merkling from the storage nodes. All storage nodes independently form pairs but bookings for them are made by the merkler node. And, while uploads are made directly (by the client) on storage nodes, the commiting process is done by the merkler node at the request of the client. The merkler will keep track of all nodes in the network, their deaths and marriages.
+
+The biggest benefit of using such a node would be that the merkler can distribute the storage load evenly to the entire network. This will help utilize residue budget on nodes that is too small for a single client. The added benefit is that the routing problem is solved because the merkler node maintains node information of the entire network anyways. 
+
+### Other Improvments and Pending implementations in Code
+
+1. The garbage cleaning of non commited files is still pending and would have been implemented if more time was available
+2. The errors returned and handling of the errors
+3. gRPC for streamed RPC calls for file uploading
+4. Proper utilization of Go's concurrency tools, right now go routines are just fired without proper thought.
