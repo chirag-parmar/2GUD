@@ -15,6 +15,8 @@ docker exec -it zama-client-1 /bin/sh
 
 ### Client operations
 
+The above command will start a shell inside the client node for you, then use the below operations to interact with other nodes.
+
 upload dummy files to the servers
 ```bash
 ./client --upload=true
