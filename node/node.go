@@ -154,26 +154,36 @@ func (n *Node) CommitFiles(args *CommitFilesArgs, reply *CommitFilesReply) error
 		return errors.New("Bookings not made!")
 	}
 
-	t := MerkleTree{}
-	isFirst := true
-	for _, hash := range args.Hashes {
-		if _, ok := n.fileStatusTable[hash]; !ok {
-			return errors.New("Hash was not uploaded!")		
+	if n.isPrimary {
+		t := MerkleTree{}
+		isFirst := true
+		for _, hash := range args.Hashes {
+			if _, ok := n.fileStatusTable[hash]; !ok {
+				return errors.New("Hash was not uploaded!")		
+			}
+			
+			n.fileStatusTable[hash] = 1
+			if isFirst {
+				t.Init(hash)
+				isFirst = false
+			} else {
+				t.AddLeaf(hash)
+			}
 		}
-		
-		n.fileStatusTable[hash] = 1
-		if isFirst {
-			t.Init(hash)
-			isFirst = false
-		} else {
-			t.AddLeaf(hash)
+
+		n.trees[t.root.hash] = &t
+		n.treesStatus[t.root.hash] = 0
+		reply.Merkle = t.root.hash
+		reply.IndexMap = t.hashToIndex
+	} else {
+		for _, hash := range args.Hashes {
+			if _, ok := n.fileStatusTable[hash]; !ok {
+				return errors.New("Hash was not uploaded!")		
+			}
+			
+			n.fileStatusTable[hash] = 1
 		}
 	}
-
-	n.trees[t.root.hash] = &t
-	n.treesStatus[t.root.hash] = 0
-	reply.Merkle = t.root.hash
-	reply.IndexMap = t.hashToIndex
 
 	// reclaim file budget
 	if n.fileBookings[args.RequesterID] > 0 {
