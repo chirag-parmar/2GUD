@@ -1,4 +1,4 @@
-# Report - Programming Task
+# Report
 
 > Problem: Implement a file server that uses Merkle trees to provide proof to the client that the file is corrupted. Use networking and make the server design as ready for production as possible.
 
