@@ -1,3 +1,7 @@
+## 2GUD - 2 Gether Until Death
+
+This was originally a programming task submission for a job role at zama.ai. Though in vain, I completely enjoyed the task. Read the report [here](REPORT.md)
+
 ### Setup nodes
 
 ```bash
